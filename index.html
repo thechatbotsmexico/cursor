@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Playground</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;900&family=Playfair+Display:ital,wght@0,400;0,700&family=Press+Start+2P&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html,body{background:#000;overflow-x:hidden;cursor:none;font-family:'Inter',sans-serif;}
+
+#cd{width:6px;height:6px;border-radius:50%;background:#fff;position:fixed;top:0;left:0;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);transition:width .3s,height .3s,background .3s,border-radius .3s,opacity .3s;}
+#cr{width:28px;height:28px;border-radius:50%;border:1.5px solid rgba(255,255,255,.55);position:fixed;top:0;left:0;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);transition:width .3s,height .3s,border-color .3s,border-radius .3s,opacity .3s,background .3s;}
+
+/* S1 crosshair */
+body.cs1 #cd{width:3px;height:3px;}
+body.cs1 #cr{width:40px;height:40px;border-color:rgba(255,255,255,.4);}
+body.cs1 #cr::before,body.cs1 #cr::after{content:'';position:absolute;background:rgba(255,255,255,.28);top:50%;left:50%;transform:translate(-50%,-50%);}
+body.cs1 #cr::before{width:58px;height:1px;}
+body.cs1 #cr::after{width:1px;height:58px;}
+
+/* S2 sphere cursor — rendered instantly on canvas, no delayed HTML overlay */
+body.cs2 #cd{opacity:0;}
+body.cs2 #cr{opacity:0;}
+
+/* S3 invisible */
+body.cs3 #cd,body.cs3 #cr{opacity:0;}
+/* S4 invisible */
+body.cs4 #cd,body.cs4 #cr{opacity:0;}
+
+/* S5 lantern */
+body.cs5 #cd{opacity:0;}
+body.cs5 #cr{width:600px;height:600px;border:none;border-radius:50%;pointer-events:none;background:transparent;}
+
+/* S6 retro terminal — small typing caret, ~18px letter size */
+body.cs6 #cd{width:9px;height:18px;border-radius:1px;background:#00ff41;box-shadow:0 0 10px #00ff41,0 0 20px rgba(0,255,65,.4);animation:blink .65s step-end infinite;}
+body.cs6 #cr{opacity:0;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:0;}}
+
+#prog{position:fixed;top:0;left:0;height:2px;width:0%;background:#fff;z-index:9000;}
+nav{position:fixed;top:0;left:0;right:0;z-index:500;display:flex;justify-content:space-between;align-items:center;padding:20px 44px;mix-blend-mode:difference;}
+.logo{font-weight:900;font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:#fff;}
+.dots{display:flex;gap:10px;}
+.dot{width:7px;height:7px;border-radius:50%;border:1px solid rgba(255,255,255,.4);background:transparent;cursor:pointer;transition:all .3s;}
+.dot.on{background:#fff;}
+.sec{width:100vw;height:100vh;position:relative;overflow:hidden;}
+.sec canvas{position:absolute;top:0;left:0;display:block;}
+</style>
+</head>
+<body class="cs1">
+<svg width="0" height="0" style="position:absolute;pointer-events:none;">
+  <defs>
+    <filter id="goo-s2">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur"/>
+      <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -9" result="goo"/>
+      <feComposite in="SourceGraphic" in2="goo" operator="atop"/>
+    </filter>
+  </defs>
+</svg>
+<div id="cd"></div>
+<div id="cr"></div>
+<div id="prog"></div>
+<nav>
+  <span class="logo">Playground</span>
+  <div class="dots">
+    <div class="dot on" onclick="goTo(0)"></div>
+    <div class="dot" onclick="goTo(1)"></div>
+    <div class="dot" onclick="goTo(2)"></div>
+    <div class="dot" onclick="goTo(3)"></div>
+    <div class="dot" onclick="goTo(4)"></div>
+    <div class="dot" onclick="goTo(5)"></div>
+  </div>
+</nav>
+
+<section class="sec" id="s1"><canvas id="c1"></canvas></section>
+<section class="sec" id="s2"><canvas id="c2" style="filter:url(#goo-s2);"></canvas></section>
+<section class="sec" id="s3"><canvas id="c3"></canvas></section>
+<section class="sec" id="s4"><canvas id="c4a"></canvas><canvas id="c4b" style="position:absolute;top:0;left:0;"></canvas></section>
+<section class="sec" id="s5">
+  <canvas id="c5"></canvas>
+</section>
+<section class="sec" id="s6">
+  <canvas id="c6b"></canvas>
+  <canvas id="c6f" style="position:absolute;top:0;left:0;z-index:2;"></canvas>
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:3;font-family:'Press Start 2P',monospace;font-size:8px;color:#00ff41;text-shadow:0 0 8px #00ff41,0 0 16px rgba(0,255,65,.5);letter-spacing:2px;white-space:nowrap;"><span id="hackTyped"></span><span style="display:inline-block;width:5px;height:8px;background:#00ff41;margin-left:4px;vertical-align:-1px;animation:blink .65s step-end infinite;"></span></div>
+</section>
+
+<script>
+const VW=()=>window.innerWidth,VH=()=>window.innerHeight;
+let MX=VW()/2,MY=VH()/2,RX=MX,RY=MY;
+const cd=document.getElementById('cd'),cr=document.getElementById('cr');
+document.addEventListener('mousemove',e=>{MX=e.clientX;MY=e.clientY;});
+(function loop(){
+  cd.style.left=MX+'px';cd.style.top=MY+'px';
+  RX+=(MX-RX)*.12;RY+=(MY-RY)*.12;
+  cr.style.left=RX+'px';cr.style.top=RY+'px';
+  requestAnimationFrame(loop);
+})();
+const CLS=['cs1','cs2','cs3','cs4','cs5','cs6'];
+function goTo(i){window.scrollTo({top:i*VH(),behavior:'smooth'});}
+window.addEventListener('scroll',()=>{
+  const s=window.scrollY,h=document.documentElement.scrollHeight-VH();
+  document.getElementById('prog').style.width=(s/h*100)+'%';
+  const idx=Math.min(5,Math.round(s/VH()));
+  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('on',i===idx));
+  document.body.className=CLS[idx];
+},{passive:true});
+function rel(sec){const r=sec.getBoundingClientRect();return{x:MX-r.left,y:MY-r.top,inside:MY>=r.top&&MY<=r.bottom};}
+
+// ═══════════════════════════════════════════
+// S1 — CONSTELLATIONS  720 particles, thinner lines
+// ═══════════════════════════════════════════
+(function(){
+  const cv=document.getElementById('c1'),cx=cv.getContext('2d');
+  const sec=document.getElementById('s1');
+  cv.width=VW();cv.height=VH();
+  window.addEventListener('resize',()=>{cv.width=VW();cv.height=VH();});
+  const N=720,R=120,CONN=90;
+  const pts=Array.from({length:N},()=>{
+    const x=Math.random()*VW(),y=Math.random()*VH();
+    return{x,y,ox:x,oy:y,vx:0,vy:0,
+      r:Math.random()*.8+.2,
+      a:Math.random()*.55+.2,
+      ts:Math.random()*.018+.004,
+      to:Math.random()*Math.PI*2,
+      dvx:(Math.random()-.5)*.06,dvy:(Math.random()-.5)*.06};
+  });
+  let t=0;
+  (function draw(){
+    const m=rel(sec);t+=.016;
+    cx.clearRect(0,0,cv.width,cv.height);
+    if(m.inside){
+      for(let i=0;i<pts.length;i++){
+        const p=pts[i],dm=Math.hypot(p.x-m.x,p.y-m.y);
+        if(dm>R)continue;
+        for(let j=i+1;j<pts.length;j++){
+          const q=pts[j],dq=Math.hypot(p.x-q.x,p.y-q.y);
+          if(dq<CONN){
+            const a=(1-dq/CONN)*(1-dm/R);
+            // Glow — half thickness
+            cx.beginPath();cx.strokeStyle=`rgba(160,210,255,${a*.3})`;cx.lineWidth=2;cx.moveTo(p.x,p.y);cx.lineTo(q.x,q.y);cx.stroke();
+            // Core line — half thickness
+            cx.beginPath();cx.strokeStyle=`rgba(255,255,255,${a*.88})`;cx.lineWidth=0.75;cx.moveTo(p.x,p.y);cx.lineTo(q.x,q.y);cx.stroke();
+          }
+        }
+      }
+    }
+    pts.forEach(p=>{
+      const dx=p.x-m.x,dy=p.y-m.y,d=Math.hypot(dx,dy);
+      if(d<R&&d>0&&m.inside){const f=(R-d)/R;p.vx+=(dx/d)*f*3;p.vy+=(dy/d)*f*3;}
+      p.vx+=(p.ox-p.x)*.04;p.vy+=(p.oy-p.y)*.04;
+      p.ox+=p.dvx;p.oy+=p.dvy;
+      if(p.ox<0)p.ox=VW();if(p.ox>VW())p.ox=0;
+      if(p.oy<0)p.oy=VH();if(p.oy>VH())p.oy=0;
+      p.vx*=.83;p.vy*=.83;p.x+=p.vx;p.y+=p.vy;
+      const a=Math.max(0,Math.min(1,p.a+Math.sin(t*p.ts*60+p.to)*.18));
+      cx.beginPath();cx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      cx.fillStyle=`rgba(255,255,255,${a})`;cx.fill();
+    });
+    requestAnimationFrame(draw);
+  })();
+})();
+
+// ═══════════════════════════════════════════
+// S2 — GRADIENT SPHERES  20-tone palette, soft open gradients
+// bigger spheres, stronger collisions, instant sphere cursor
+// ═══════════════════════════════════════════
+(function(){
+  const cv=document.getElementById('c2'),cx=cv.getContext('2d');
+  const sec=document.getElementById('s2');
+  cv.width=VW();cv.height=VH();
+  window.addEventListener('resize',()=>{cv.width=VW();cv.height=VH();});
+
+  // Reference plate is 936×1438 (portrait). Each bubble below is placed at its
+  // measured x,y,r in that reference space; at runtime x/936 and y/1438 give
+  // the fractional position so the exact composition adapts to any (e.g. horizontal) canvas.
+  const REF_W=936,REF_H=1438;
+  const BASE=[
+    {x:230,y:60, r:155,c1:'#1f7a3f',c2:'#d9e85a'},
+    {x:305,y:280,r:100,c1:'#e8836a',c2:'#6ab8e8'},
+    {x:370,y:395,r:35, c1:'#e8c94a',c2:'#d9a97a'},
+    {x:565,y:325,r:165,c1:'#6ab8e8',c2:'#c23568'},
+    {x:720,y:150,r:55, c1:'#4a90d9',c2:'#f0c9d0'},
+    {x:830,y:320,r:100,c1:'#e8a97a',c2:'#c6dc5a'},
+    {x:715,y:480,r:48, c1:'#f0b888',c2:'#e8a97a'},
+    {x:605,y:545,r:48, c1:'#2e7d4f',c2:'#6ab8e8'},
+    {x:830,y:650,r:200,c1:'#c6dc5a',c2:'#5a6ad9'},
+    {x:115,y:610,r:163,c1:'#c93d8a',c2:'#9ed94a'},
+    {x:420,y:690,r:118,c1:'#a89ac4',c2:'#e8a97a'},
+    {x:255,y:720,r:25, c1:'#f0e3a0',c2:'#e8c94a'},
+    {x:50, y:1005,r:80, c1:'#5a6ad9',c2:'#4a2568'},
+    {x:405,y:1040,r:100,c1:'#e8c94a',c2:'#4a2568'},
+    {x:545,y:1120,r:55, c1:'#c23568',c2:'#9ed94a'},
+    {x:755,y:985, r:110,c1:'#f0e3a0',c2:'#5a2568'},
+    {x:905,y:965, r:48, c1:'#e8836a',c2:'#9ed94a'},
+    {x:200,y:1310,r:165,c1:'#e8a97a',c2:'#2e1a4a'},
+    {x:430,y:1250,r:90, c1:'#9ed94a',c2:'#eaf5d0'},
+    {x:645,y:1270,r:120,c1:'#6ab8e8',c2:'#eac9d8'},
+    {x:480,y:1385,r:40, c1:'#d9a97a',c2:'#f0e3a0'},
+    {x:50, y:120, r:90, c1:'#e8836a',c2:'#eac9d8'},
+  ];
+
+  const bubbles=BASE.map(b=>{
+    const x=(b.x/REF_W)*VW(), y=(b.y/REF_H)*VH(), r=(b.r/REF_W)*VW()*.5;
+    const ang=Math.PI*0.22;
+    const heading=Math.random()*Math.PI*2;
+    const speed=.5+Math.random()*.6;
+    return{x,y,r,
+      vx:Math.cos(heading)*speed,vy:Math.sin(heading)*speed,
+      heading,
+      turnPh:Math.random()*Math.PI*2,turnSp:.004+Math.random()*.006,
+      c1:b.c1,c2:b.c2,
+      gx:Math.cos(ang),gy:Math.sin(ang),
+      bounce:0};
+  });
+
+  function hexRgb(h){return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+
+  const CURSOR_R=85;
+  // Same tones as the big blue-magenta sphere, but inverted order
+  const cc1='#c23568',cc2='#6ab8e8';
+
+  (function draw(){
+    const m=rel(sec);
+
+    // Background — iridescent pastel gradient, exact reference
+    const bg=cx.createLinearGradient(0,0,cv.width,cv.height);
+    bg.addColorStop(0,'#e9c9dd');bg.addColorStop(.22,'#f0d3bc');
+    bg.addColorStop(.45,'#f2dfae');bg.addColorStop(.62,'#e6e6ac');
+    bg.addColorStop(.8,'#cfe8b8');bg.addColorStop(1,'#f2e79a');
+    cx.fillStyle=bg;cx.fillRect(0,0,cv.width,cv.height);
+
+    bubbles.forEach((b,i)=>{
+      // Free, organic wandering — no home position, drifts across the whole canvas
+      b.turnPh+=b.turnSp;
+      b.heading+=Math.sin(b.turnPh)*.03;
+      b.vx+=Math.cos(b.heading)*.03;
+      b.vy+=Math.sin(b.heading)*.03;
+
+      // Cursor sphere push — soft, fluid displacement
+      const dx=b.x-m.x,dy=b.y-m.y,dist=Math.hypot(dx,dy);
+      if(dist<b.r+CURSOR_R+15&&dist>0&&m.inside){
+        const f=(b.r+CURSOR_R+15-dist)/(b.r+CURSOR_R+15);
+        b.vx+=(dx/dist)*f*4;b.vy+=(dy/dist)*f*4;
+      }
+
+      // Bubble-bubble collision — soft, liquid-like, no rigid bounce-back
+      for(let j=i+1;j<bubbles.length;j++){
+        const c=bubbles[j];
+        const bx=b.x-c.x,by=b.y-c.y,bd=Math.hypot(bx,by);
+        const minD=b.r+c.r-6; // let them overlap slightly so the goo filter can fuse them
+        if(bd<minD&&bd>0){
+          const f=(minD-bd)/minD;
+          b.vx+=(bx/bd)*f*1.4;b.vy+=(by/bd)*f*1.4;
+          c.vx-=(bx/bd)*f*1.4;c.vy-=(by/bd)*f*1.4;
+          // Very gentle positional nudge — let them rest touching/merged instead of snapping apart
+          const overlap=(minD-bd)*.15;
+          b.x+=(bx/bd)*overlap;b.y+=(by/bd)*overlap;
+          c.x-=(bx/bd)*overlap;c.y-=(by/bd)*overlap;
+        }
+      }
+
+      // Light friction — keeps them gliding continuously, never settling still
+      b.vx*=.985;b.vy*=.985;
+      // Speed clamp — keeps everything gliding, never jittering
+      const sp=Math.hypot(b.vx,b.vy),MAXSP=1.6,MINSP=.35;
+      if(sp>MAXSP){b.vx=b.vx/sp*MAXSP;b.vy=b.vy/sp*MAXSP;}
+      else if(sp<MINSP&&sp>0){b.vx=b.vx/sp*MINSP;b.vy=b.vy/sp*MINSP;}
+      b.x+=b.vx;b.y+=b.vy;
+
+      // Wall bounce — soft restitution
+      if(b.x-b.r<0){b.x=b.r;b.vx=Math.abs(b.vx)*.5;}
+      if(b.x+b.r>cv.width){b.x=cv.width-b.r;b.vx=-Math.abs(b.vx)*.5;}
+      if(b.y-b.r<0){b.y=b.r;b.vy=Math.abs(b.vy)*.5;}
+      if(b.y+b.r>cv.height){b.y=cv.height-b.r;b.vy=-Math.abs(b.vy)*.5;}
+
+      // Draw — LINEAR gradient like reference, diagonal angle
+      const [r1,g1,bl1]=hexRgb(b.c1);
+      const [r2,g2,bl2]=hexRgb(b.c2);
+      const lx1=b.x-b.r*b.gx, ly1=b.y-b.r*b.gy;
+      const lx2=b.x+b.r*b.gx, ly2=b.y+b.r*b.gy;
+      const g=cx.createLinearGradient(lx1,ly1,lx2,ly2);
+      g.addColorStop(0,`rgba(${r1},${g1},${bl1},1)`);
+      g.addColorStop(1,`rgba(${r2},${g2},${bl2},1)`);
+      cx.beginPath();cx.arc(b.x,b.y,b.r,0,Math.PI*2);
+      cx.fillStyle=g;cx.fill();
+    });
+
+    // Cursor sphere — same as a bubble but with inverted tones, no glow, fully opaque
+    if(m.inside){
+      const [r1,g1,bl1]=hexRgb(cc1);
+      const [r2,g2,bl2]=hexRgb(cc2);
+      const g=cx.createLinearGradient(m.x-CURSOR_R*.6,m.y-CURSOR_R*.6,m.x+CURSOR_R*.6,m.y+CURSOR_R*.6);
+      g.addColorStop(0,`rgba(${r1},${g1},${bl1},1)`);
+      g.addColorStop(1,`rgba(${r2},${g2},${bl2},1)`);
+      cx.beginPath();cx.arc(m.x,m.y,CURSOR_R,0,Math.PI*2);cx.fillStyle=g;cx.fill();
+    }
+    requestAnimationFrame(draw);
+  })();
+})();
+
+// ═══════════════════════════════════════════
+// S3 — ABSTRACT BLURRED GRADIENT BLOB
+// muted purple/blue/white palette, soft blur, exact reference
+// ═══════════════════════════════════════════
+(function(){
+  const cv=document.getElementById('c3'),cx=cv.getContext('2d');
+  const sec=document.getElementById('s3');
+  cv.width=VW();cv.height=VH();
+  window.addEventListener('resize',()=>{cv.width=VW();cv.height=VH();});
+
+  // Fixed cohesive palette — deep indigo, violet, blue, pale lavender/white
+  const PAL=['#3a1f9e','#5b2fd6','#3a5fe0','#7b5cf0','#c9d4ff','#e8e2ff'];
+
+  const orbs=[];
+  const N=9;
+  for(let i=0;i<N;i++){
+    orbs.push({
+      x:Math.random()*VW(),y:Math.random()*VH(),
+      tx:Math.random()*VW(),ty:Math.random()*VH(),
+      col:PAL[i%PAL.length],
+      r:Math.random()*260+320,
+      baseR:0,
+      sp:Math.random()*.012+.006,
+      ph:Math.random()*Math.PI*2,ph2:Math.random()*Math.PI*2,
+      pph:Math.random()*Math.PI*2,psp:Math.random()*.03+.02,
+      vx:0,vy:0,
+    });
+  }
+  orbs.forEach(o=>o.baseR=o.r);
+
+  let t=0;
+  (function draw(){
+    const m=rel(sec);t+=.018;
+
+    // Deep indigo base
+    cx.fillStyle='#2a1570';cx.fillRect(0,0,cv.width,cv.height);
+
+    cx.save();
+    cx.filter='blur(70px)';
+    cx.globalCompositeOperation='lighten';
+
+    orbs.forEach((o,i)=>{
+      const dx=Math.sin(t*o.sp*40+o.ph)*VW()*.32;
+      const dy=Math.cos(t*o.sp*32+o.ph2)*VH()*.32;
+      const bx=VW()*((i%3)+.5)/3+dx;
+      const by=VH()*(Math.floor(i/3)+.5)/3+dy;
+      o.vx+=(bx-o.x)*.006;o.vy+=(by-o.y)*.006;
+
+      // Cursor gently attracts/pushes nearby orbs
+      if(m.inside){
+        const ddx=o.x-m.x,ddy=o.y-m.y,dd=Math.hypot(ddx,ddy);
+        const PUSH=300;
+        if(dd<PUSH&&dd>0){
+          const f=(PUSH-dd)/PUSH*4.5;
+          o.vx+=(ddx/dd)*f;o.vy+=(ddy/dd)*f;
+        }
+      }
+
+      o.vx*=.92;o.vy*=.92;
+      o.x+=o.vx;o.y+=o.vy;
+
+      // Breathing radius pulse for extra liveliness
+      o.r=o.baseR+Math.sin(t*o.psp*20+o.pph)*70;
+
+      const g=cx.createRadialGradient(o.x,o.y,0,o.x,o.y,o.r);
+      g.addColorStop(0,o.col);
+      g.addColorStop(1,'transparent');
+      cx.fillStyle=g;cx.fillRect(0,0,cv.width,cv.height);
+    });
+
+    // Cursor glow — soft white/lavender, same palette
+    if(m.inside){
+      const cg=cx.createRadialGradient(m.x,m.y,0,m.x,m.y,340);
+      cg.addColorStop(0,'#e8e2ff');
+      cg.addColorStop(1,'transparent');
+      cx.fillStyle=cg;cx.fillRect(0,0,cv.width,cv.height);
+    }
+
+    cx.restore();
+    requestAnimationFrame(draw);
+  })();
+})();
+
+// ═══════════════════════════════════════════
+// S4 — COMET TRAIL  double-layer bg
+// trail erases top color, reveals bottom color
+// ═══════════════════════════════════════════
+(function(){
+  const cva=document.getElementById('c4a'),cxa=cva.getContext('2d');
+  const cvb=document.getElementById('c4b'),cxb=cvb.getContext('2d');
+  const sec=document.getElementById('s4');
+  cva.width=cvb.width=VW();cva.height=cvb.height=VH();
+  window.addEventListener('resize',()=>{cva.width=cvb.width=VW();cva.height=cvb.height=VH();drawBg();});
+
+  // Bottom layer — deep teal/purple
+  function drawBg(){
+    const bg=cxa.createLinearGradient(0,0,cva.width,cva.height);
+    bg.addColorStop(0,'#0a0020');bg.addColorStop(.5,'#001430');bg.addColorStop(1,'#100010');
+    cxa.fillStyle=bg;cxa.fillRect(0,0,cva.width,cva.height);
+  }
+  drawBg();
+
+  // Top layer — filled with warm neon gradient (to be erased by trail)
+  const topBg=cxb.createLinearGradient(0,0,cvb.width,cvb.height);
+  topBg.addColorStop(0,'#ff6030');topBg.addColorStop(.33,'#ff20a0');
+  topBg.addColorStop(.66,'#8020ff');topBg.addColorStop(1,'#20d0ff');
+  cxb.fillStyle=topBg;cxb.fillRect(0,0,cvb.width,cvb.height);
+
+  // Hyperspace streaks on bottom layer
+  const stars=Array.from({length:200},()=>({
+    x:Math.random()*VW(),y:Math.random()*VH(),
+    z:Math.random()*VW(),pz:0,speed:Math.random()*2.5+.8,
+  }));
+
+  const LEN=240;
+  const trail=Array.from({length:LEN},()=>({x:VW()/2,y:VH()/2}));
+  const SHAPES=['star','circle','diamond','triangle','ring'];
+  let lastMoveT=0;
+  document.addEventListener('mousemove',()=>{lastMoveT=Date.now();});
+
+  function drawShape(ctx,x,y,size,alpha,hue,shape){
+    ctx.save();ctx.globalAlpha=alpha;ctx.translate(x,y);
+    const col=`hsl(${hue},100%,68%)`;
+    if(shape==='star'){
+      ctx.fillStyle=col;ctx.beginPath();
+      for(let i=0;i<5;i++){const a=Math.PI/2+i*Math.PI*2/5,a2=a+Math.PI/5;ctx.lineTo(Math.cos(a)*size,Math.sin(a)*size);ctx.lineTo(Math.cos(a2)*size*.4,Math.sin(a2)*size*.4);}
+      ctx.closePath();ctx.fill();
+    }else if(shape==='circle'){
+      ctx.fillStyle=col;ctx.beginPath();ctx.arc(0,0,size,0,Math.PI*2);ctx.fill();
+    }else if(shape==='diamond'){
+      ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(0,-size);ctx.lineTo(size,0);ctx.lineTo(0,size);ctx.lineTo(-size,0);ctx.closePath();ctx.fill();
+    }else if(shape==='triangle'){
+      ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(0,-size);ctx.lineTo(size*.87,size*.5);ctx.lineTo(-size*.87,size*.5);ctx.closePath();ctx.fill();
+    }else{
+      ctx.strokeStyle=col;ctx.lineWidth=size*.3;ctx.beginPath();ctx.arc(0,0,size*.7,0,Math.PI*2);ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  let t=0;
+  (function draw(){
+    const m=rel(sec);t+=.016;
+    // Solid bright bottom — electric blue
+    cxa.fillStyle='#0066ff';cxa.fillRect(0,0,cva.width,cva.height);
+
+    // Top layer: erase where trail passes using destination-out
+    const active=m.inside&&(Date.now()-lastMoveT<150);
+    if(active){
+      cxb.save();
+      cxb.globalCompositeOperation='destination-out';
+      // Erase a circle at each recent trail point
+      for(let i=0;i<60;i++){
+        const p=i/60;
+        const eraseR=Math.max(2,(1-p)*55+5);
+        const alpha=(1-p)*.18;
+        cxb.beginPath();cxb.arc(trail[i].x,trail[i].y,eraseR,0,Math.PI*2);
+        cxb.fillStyle=`rgba(0,0,0,${alpha})`;cxb.fill();
+      }
+      cxb.restore();
+
+      // Trail stays revealed permanently — no restore pass
+
+      // Update trail
+      for(let i=LEN-1;i>0;i--){trail[i].x=trail[i-1].x;trail[i].y=trail[i-1].y;}
+      trail[0].x=m.x;trail[0].y=m.y;
+
+      // Draw trail shapes on TOP layer
+      for(let i=LEN-1;i>=0;i--){
+        const p=i/LEN;
+        const alpha=Math.pow(1-p,.72)*.9;
+        const size=Math.max(2,(1-p)*34+4);
+        const hue=(t*70-i*1.5)%360;
+        drawShape(cxb,trail[i].x,trail[i].y,size,alpha,hue,SHAPES[Math.floor(i/48)%SHAPES.length]);
+      }
+      // Head star
+      cxb.save();cxb.translate(m.x,m.y);
+      cxb.shadowColor='#fff';cxb.shadowBlur=30;cxb.fillStyle='#fff';
+      cxb.beginPath();
+      for(let i=0;i<5;i++){const a=Math.PI/2+i*Math.PI*2/5+t*2,a2=a+Math.PI/5;cxb.lineTo(Math.cos(a)*20,Math.sin(a)*20);cxb.lineTo(Math.cos(a2)*8,Math.sin(a2)*8);}
+      cxb.closePath();cxb.fill();cxb.restore();
+    }
+
+    requestAnimationFrame(draw);
+  })();
+})();
+
+// ═══════════════════════════════════════════
+// S5 — LOVECRAFT LANTERN  full screen text
+// blue neon sorcery theme, no grow effect
+// pure dark background, lantern only reveals
+// ═══════════════════════════════════════════
+(function(){
+  const cv=document.getElementById('c5'),cx=cv.getContext('2d');
+  const sec=document.getElementById('s5');
+  cv.width=VW();cv.height=VH();
+  window.addEventListener('resize',()=>{cv.width=VW();cv.height=VH();buildText();});
+
+  const LANTERN=210,FADE_START=55;
+  let words=[];
+
+  const LINES=[
+    'No es muerto lo que puede eternamente yacer',
+    'y con el paso de extraños eones incluso la muerte puede morir',
+    'Ph\'nglui mglw\'nafh Cthulhu R\'lyeh wgah\'nagl fhtagn',
+    'En su mansión en R\'lyeh el muerto Cthulhu aguarda soñando',
+    'Iä Iä Cthulhu fhtagn Iä Shub-Niggurath',
+    'La cabra negra del bosque con su millar de crías',
+    'Azathoth el Caos Ciego y Nuclear mastica sin mente',
+    'en el centro de la oscuridad definitiva del universo',
+    'Yog-Sothoth conoce la llave Yog-Sothoth es la puerta',
+    'Yog-Sothoth es la llave y el guardián de la puerta',
+    'Nyarlathotep el Mensajero Reptante camina entre nosotros',
+    'adopta forma humana y trae la locura a su paso',
+    'Los Grandes Antiguos duermen en dimensiones prohibidas',
+    'esperando el alineamiento de las estrellas para despertar',
+    'El Necronomicón fue escrito por el árabe loco Abdul Alhazred',
+    'sus páginas contienen verdades que destruyen la cordura',
+    'Hay ángulos en el espacio que no son ángulos euclidianos',
+    'geometrías imposibles que la mente humana rechaza instintivamente',
+    'R\'lyeh se eleva desde las profundidades del Pacífico',
+    'sus torres de basalto negro desafían la geometría conocida',
+    'En sueños puedo escuchar el llamado de los que duermen',
+    'sus voces atraviesan el espacio y el tiempo sin esfuerzo',
+    'El universo es indiferente a nuestra existencia frágil',
+    'somos polvo cósmico en el borde de una galaxia menor',
+    'Dagon el Grande emerge del mar primordial en la oscuridad',
+    'sus escamas brillan bajo una luna que no debería existir',
+    'Los Mi-Go de Yuggoth recolectan cerebros humanos en frascos',
+    'para llevarlos a planetas que orbitan estrellas muertas',
+    'Hastur el Innombrable mora en las Hyades entre las estrellas',
+    'su nombre solo pronunciarlo atrae la maldición eterna',
+    'El signo de Koth protege pero su protección tiene un precio',
+    'ningún mortal puede pagar sin perder algo esencial',
+  ];
+
+  // Duplicated/extended so the text field is dense enough to cover the whole page
+  const FULL_LINES=LINES.concat(LINES).concat(LINES);
+
+  function buildText(){
+    words=[];
+    const allWords=FULL_LINES.join(' ').split(' ').filter(w=>w.length>0);
+    const half=Math.ceil(allWords.length/2);
+    const columns=[allWords.slice(0,half),allWords.slice(half)];
+    const marginX=VW()*.08;
+    const colGap=20;
+    const colWidth=(VW()-2*marginX-colGap)/2;
+    const colStartX=[marginX, marginX+colWidth+colGap];
+    cx.font=`13px "Playfair Display", serif`;
+    const spaceW=cx.measureText(' ').width+2;
+
+    columns.forEach((colWords,ci)=>{
+      // First pass — wrap into lines within column width
+      let x=0,lineIdx=0;
+      const placed=[];
+      colWords.forEach(word=>{
+        const wW=cx.measureText(word).width;
+        if(x+wW>colWidth){ x=0; lineIdx++; }
+        placed.push({text:word,x:colStartX[ci]+x,lineIdx});
+        x+=wW+spaceW;
+      });
+      const rows=lineIdx+1;
+      // Stretch lines so the last one lands near the bottom of the page
+      const lineHeight=Math.max(16,Math.min(34,(VH()-190)/Math.max(1,rows-1)));
+      placed.forEach(p=>{
+        words.push({text:p.text,x:p.x,y:120+p.lineIdx*lineHeight,visible:false});
+      });
+    });
+  }
+  buildText();
+  // Rebuild once the real font has loaded — avoids fallback-font width mismatch
+  if(document.fonts&&document.fonts.ready){document.fonts.ready.then(buildText);}
+
+  const titleText="El Necronomicón · Capítulo VII — Los Sueños de R'lyeh";
+  const pageText="— 66 —";
+
+  function revealAlpha(dist){
+    if(dist>=LANTERN)return 0;
+    if(dist<=FADE_START)return .85;
+    return .85*(1-(dist-FADE_START)/(LANTERN-FADE_START));
+  }
+
+  (function draw(){
+    const m=rel(sec);
+    cx.clearRect(0,0,cv.width,cv.height);
+    // Total darkness
+    cx.fillStyle='#000';cx.fillRect(0,0,cv.width,cv.height);
+
+    if(m.inside){
+      // Lantern glow — single smooth gradient, heavily diffused edge-to-center
+      const lg=cx.createRadialGradient(m.x,m.y,0,m.x,m.y,LANTERN);
+      lg.addColorStop(0,'rgba(60,140,255,.20)');
+      lg.addColorStop(.08,'rgba(55,132,255,.185)');
+      lg.addColorStop(.18,'rgba(46,118,250,.16)');
+      lg.addColorStop(.3,'rgba(38,104,238,.13)');
+      lg.addColorStop(.42,'rgba(31,90,222,.10)');
+      lg.addColorStop(.55,'rgba(25,76,205,.075)');
+      lg.addColorStop(.68,'rgba(19,62,185,.05)');
+      lg.addColorStop(.8,'rgba(14,48,160,.03)');
+      lg.addColorStop(.9,'rgba(10,38,140,.015)');
+      lg.addColorStop(1,'transparent');
+      cx.fillStyle=lg;cx.fillRect(0,0,cv.width,cv.height);
+    }
+
+    // Draw text — revealed by lantern, no scale effect
+    cx.font=`13px "Playfair Display", serif`;
+    cx.textAlign='left';
+    words.forEach(w=>{
+      const dist=Math.hypot(w.x-m.x,w.y-m.y);
+      const alpha=m.inside?revealAlpha(dist):0;
+      if(alpha<=0.01)return;
+      cx.save();
+      cx.globalAlpha=alpha;
+      cx.fillStyle='rgba(140,200,255,1)';
+      cx.shadowColor='rgba(80,160,255,.9)';
+      cx.shadowBlur=12;
+      cx.fillText(w.text,w.x,w.y);
+      cx.restore();
+    });
+
+    // Book title and page number — only visible inside the lantern light
+    if(m.inside){
+      const titlePos={x:VW()/2,y:40};
+      const pagePos={x:VW()/2,y:VH()-28};
+      const ta=revealAlpha(Math.hypot(titlePos.x-m.x,titlePos.y-m.y));
+      const pa=revealAlpha(Math.hypot(pagePos.x-m.x,pagePos.y-m.y));
+      cx.textAlign='center';
+      if(ta>0.01){
+        cx.save();cx.globalAlpha=ta;
+        cx.font=`11px "Playfair Display", serif`;
+        cx.fillStyle='rgba(140,200,255,1)';
+        cx.shadowColor='rgba(80,160,255,.9)';cx.shadowBlur=12;
+        cx.fillText(titleText,titlePos.x,titlePos.y);
+        cx.restore();
+      }
+      if(pa>0.01){
+        cx.save();cx.globalAlpha=pa;
+        cx.font=`12px "Playfair Display", serif`;
+        cx.fillStyle='rgba(140,200,255,1)';
+        cx.shadowColor='rgba(80,160,255,.9)';cx.shadowBlur=12;
+        cx.fillText(pageText,pagePos.x,pagePos.y);
+        cx.restore();
+      }
+      cx.textAlign='left';
+    }
+
+    requestAnimationFrame(draw);
+  })();
+})();
+
+
+// ═══════════════════════════════════════════
+// S6 — PARTICLE SHOOTER  pure black background
+// cursor fires particles, retro terminal message top-left
+// ═══════════════════════════════════════════
+(function(){
+  const PHRASES=[
+    'you have been hacked, Neo',
+    'follow the white rabbit',
+    'the Matrix has you',
+    'what is real?',
+    'free your mind',
+    'there is no spoon',
+    'welcome to the desert of the real',
+    'take the red pill',
+    'everything is code',
+    'fate does not exist',
+    'wake up, Neo',
+    'the truth is waiting for you',
+    'the system is watching you',
+    'you are the one',
+    'wake up'
+  ];
+  const typedEl=document.getElementById('hackTyped');
+  let phraseIdx=0;
+  function typeLoop(){
+    const phrase=PHRASES[phraseIdx];
+    let i=0;
+    typedEl.textContent='';
+    const typeInt=setInterval(()=>{
+      i++;
+      typedEl.textContent=phrase.slice(0,i);
+      if(i>=phrase.length){
+        clearInterval(typeInt);
+        setTimeout(()=>{
+          typedEl.textContent='';
+          phraseIdx=(phraseIdx+1)%PHRASES.length;
+          typeLoop();
+        },2500);
+      }
+    },55);
+  }
+  typeLoop();
+})();
+
+(function(){
+  const cvb=document.getElementById('c6b'),cxb=cvb.getContext('2d');
+  const cvf=document.getElementById('c6f'),cxf=cvf.getContext('2d');
+  const sec=document.getElementById('s6');
+  cvb.width=cvf.width=VW();cvb.height=cvf.height=VH();
+  function fillBlack(){cxb.fillStyle='#000';cxb.fillRect(0,0,cvb.width,cvb.height);}
+  fillBlack();
+  window.addEventListener('resize',()=>{cvb.width=cvf.width=VW();cvb.height=cvf.height=VH();fillBlack();});
+
+  const CHARS='アイウエオカキクケコサシスセソタチツテトハヒフヘホ0123456789ABCDEFabcdef∞∑∆√∫≠→←↑↓◆★';
+
+  // Fired particles
+  const particles=[];
+  let lastFire=0;
+
+  function fire(x,y,n){
+    for(let i=0;i<n;i++){
+      const angle=Math.random()*Math.PI*2,speed=Math.random()*14+3;
+      particles.push({
+        x,y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed-Math.random()*4,
+        char:CHARS[Math.floor(Math.random()*CHARS.length)],
+        hue:Math.random()*40+95,alpha:1,
+        size:Math.floor(Math.random()*16+9),
+        decay:Math.random()*.012+.006,gravity:.2,
+      });
+    }
+  }
+
+  document.addEventListener('mousemove',e=>{
+    const m=rel(sec);if(!m.inside)return;
+    const now=Date.now();
+    if(now-lastFire>38){fire(m.x,m.y,5);lastFire=now;}
+  });
+  document.addEventListener('click',e=>{
+    const m=rel(sec);if(m.inside)fire(m.x,m.y,50);
+  });
+
+  // Particle loop only — pure black background stays untouched
+  (function particleLoop(){
+    const m=rel(sec);
+    cxf.clearRect(0,0,cvf.width,cvf.height);
+
+    if(m.inside&&Date.now()-lastFire>65){fire(m.x,m.y,3);lastFire=Date.now();}
+
+    for(let i=particles.length-1;i>=0;i--){
+      const p=particles[i];
+      p.x+=p.vx;p.y+=p.vy;p.vy+=p.gravity;p.vx*=.99;p.alpha-=p.decay;
+      if(p.alpha<=0){particles.splice(i,1);continue;}
+
+      cxf.save();cxf.globalAlpha=p.alpha;
+      cxf.font=`bold ${p.size}px monospace`;
+      cxf.shadowColor=`hsl(${p.hue},100%,60%)`;cxf.shadowBlur=12;
+      cxf.fillStyle=`hsl(${p.hue},90%,${45+p.alpha*30}%)`;
+      cxf.fillText(p.char,p.x,p.y);
+      if(Math.random()<.1)p.char=CHARS[Math.floor(Math.random()*CHARS.length)];
+      cxf.restore();
+    }
+    requestAnimationFrame(particleLoop);
+  })();
+})();
+
+</script>
+</body>
+</html>
